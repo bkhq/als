@@ -1,0 +1,258 @@
+//! `als site <id|name> [flags...]` — combined detail + edit entry point.
+//!
+//! With no edit flag the command renders the site row plus its full
+//! version history. Any edit flag turns the call into a sequence of
+//! API requests:
+//!
+//! 1. PATCH `sites/:id` when `--name` and/or `--expires` is present.
+//! 2. POST `sites/:id/password` when `--pass` or `--no-pass` is present.
+//! 3. POST `sites/:id/activate` when `--version` is present.
+//!
+//! The calls run in order; the first failure aborts and earlier
+//! successes are reported.
+
+use std::io::Write;
+
+use als_api::endpoints::{password, sites, versions};
+use als_api::{ApiError, Client, PatchSiteRequest, SetPasswordResponse, Site, Version};
+use als_core::{Error, Expires, Output, OutputMode, parse_duration};
+use serde::Serialize;
+use time::Duration as TimeDuration;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
+
+use crate::cli::SiteArgs;
+use crate::commands::list::{current_iso, format_expires};
+use crate::commands::site_ident;
+use crate::prompt;
+
+#[derive(Serialize)]
+struct DetailJson<'a> {
+    site: &'a Site,
+    versions: &'a [Version],
+}
+
+pub(crate) async fn run(client: &Client, out: &mut Output, args: SiteArgs) -> Result<(), Error> {
+    let id = site_ident::resolve(client, &args.id_or_name).await?;
+    if !args.has_edit_flag() {
+        return show_detail(client, out, &id).await;
+    }
+    edit_then_show(client, out, &id, args).await
+}
+
+async fn show_detail(client: &Client, out: &mut Output, id: &str) -> Result<(), Error> {
+    let (site_res, versions_res) = tokio::join!(sites::get(client, id), versions::list(client, id));
+    let site = site_res?;
+    let versions = versions_res?;
+    render_detail(out, &site, &versions);
+    Ok(())
+}
+
+fn render_detail(out: &mut Output, site: &Site, versions: &[Version]) {
+    match out.mode() {
+        OutputMode::Json => {
+            let _ = out.json(&DetailJson { site, versions });
+        }
+        OutputMode::Quiet => {
+            out.quiet_line(&site.full_domain);
+        }
+        OutputMode::Human => {
+            let now_iso = current_iso();
+            out.human(|w| write_detail_human(w, site, versions, &now_iso));
+        }
+    }
+}
+
+fn write_detail_human(w: &mut dyn Write, site: &Site, versions: &[Version], now_iso: &str) {
+    let _ = writeln!(w, "\x1b[32m✓\x1b[0m {}", site.full_domain);
+    // Two distinct identifiers (see the deploy renderer for the
+    // rationale): `Id` is the URL subdomain / wire key, `Name` is the
+    // user-set human label.
+    let _ = writeln!(w, "  Id:       {}", site.id);
+    let _ = writeln!(w, "  Name:     {}", site.project_name);
+    if let Some(d) = site.description.as_deref() {
+        let _ = writeln!(w, "  About:    {d}");
+    }
+    let _ = writeln!(
+        w,
+        "  Pass:     {}",
+        if site.auth_required { "yes" } else { "none" }
+    );
+    let _ = writeln!(w, "  Created:  {}", site.created_at);
+    let _ = writeln!(
+        w,
+        "  Expires:  {}",
+        format_expires(site.expires_at.as_deref(), now_iso)
+    );
+
+    let _ = writeln!(w);
+    let _ = writeln!(w, "  Versions  ({} total, * = current)", versions.len());
+    for v in versions {
+        let marker = if v.id == site.current_version {
+            "*"
+        } else {
+            " "
+        };
+        let note = v.note.as_deref().unwrap_or("");
+        let _ = writeln!(
+            w,
+            "  {marker} {id:24} {bytes:>10} bytes  {files:>4} files  {note}",
+            id = v.id,
+            bytes = v.size_bytes,
+            files = v.file_count
+        );
+    }
+}
+
+async fn edit_then_show(
+    client: &Client,
+    out: &mut Output,
+    id: &str,
+    args: SiteArgs,
+) -> Result<(), Error> {
+    // PATCH (name / expires)
+    if args.name.is_some() || args.expires.is_some() {
+        let body = build_patch(&args)?;
+        let _: Site = sites::patch(client, id, &body).await?;
+        if args.name.is_some() {
+            out.quiet_line(&format!(
+                "\x1b[32m✓\x1b[0m Renamed to '{}'",
+                args.name.as_deref().unwrap_or("")
+            ));
+        }
+        if args.expires.is_some() {
+            out.quiet_line(&format!(
+                "\x1b[32m✓\x1b[0m Expiration updated to {}",
+                args.expires.as_deref().unwrap_or("")
+            ));
+        }
+    }
+
+    // Password
+    if let Some(pass) = args.pass.as_deref() {
+        let resp: SetPasswordResponse = password::set(client, id, Some(pass)).await?;
+        if pass == "auto" {
+            // The mock surfaces the generated plaintext under `generatedPassword`;
+            // the live server doesn't — fall back to a generic confirmation.
+            let extra = generated_password_from_value(&resp);
+            match extra {
+                Some(p) => out.quiet_line(&format!("\x1b[32m✓\x1b[0m Password set: {p}")),
+                None => out.quiet_line("\x1b[32m✓\x1b[0m Password set (generated by server)."),
+            }
+        } else {
+            out.quiet_line("\x1b[32m✓\x1b[0m Password set.");
+        }
+    } else if args.no_pass {
+        if !args.yes && !prompt::confirm(&format!("Make site '{id}' public (clear password)?"))? {
+            out.quiet_line("Cancelled.");
+            return Ok(());
+        }
+        let _: SetPasswordResponse = password::set(client, id, None).await?;
+        out.quiet_line("\x1b[32m✓\x1b[0m Password cleared.");
+    }
+
+    // Activate version
+    if let Some(ver) = args.version.as_deref() {
+        if !args.yes && !prompt::confirm(&format!("Activate version '{ver}' for site '{id}'?"))? {
+            out.quiet_line("Cancelled.");
+            return Ok(());
+        }
+        match versions::activate(client, id, ver).await {
+            Ok(()) => {
+                out.quiet_line(&format!("\x1b[32m✓\x1b[0m Active version → {ver}"));
+            }
+            Err(ApiError::NotFound) => {
+                // The 404 here means either the site id is wrong (caught
+                // earlier by `site_ident::resolve`) or — far more often
+                // — the version id doesn't belong to this site.
+                // `output::report_error` renders the contextual hint.
+                return Err(Error::NotFound {
+                    what: format!("version '{ver}' for site '{id}'"),
+                    hint: Some("run `als site <id>` to list available versions".to_owned()),
+                });
+            }
+            Err(other) => return Err(other.into()),
+        }
+    }
+
+    Ok(())
+}
+
+fn build_patch(args: &SiteArgs) -> Result<PatchSiteRequest, Error> {
+    let mut body = PatchSiteRequest::default();
+    if let Some(n) = args.name.as_deref() {
+        body.project_name = Some(n.to_owned());
+    }
+    if let Some(e) = args.expires.as_deref() {
+        let expires = parse_duration(e)?;
+        body.expires_at = Some(expires_to_iso(&expires));
+    }
+    Ok(body)
+}
+
+fn expires_to_iso(expires: &Expires) -> Option<String> {
+    match expires {
+        Expires::Never => None,
+        Expires::Duration(d) => {
+            let secs = i64::try_from(d.as_secs()).unwrap_or(i64::MAX);
+            Some(future_iso(secs))
+        }
+        Expires::AbsoluteUtc(dt) => dt.format(&Rfc3339).ok(),
+    }
+}
+
+fn future_iso(secs: i64) -> String {
+    let base = OffsetDateTime::now_utc();
+    // `base + TimeDuration::seconds(i64::MAX)` panics inside `time`
+    // when the year exceeds the supported range (≤ 9999). The duration
+    // parser already rejects values that overflow earlier, but use
+    // `checked_add` defensively so a future caller can't crash the CLI
+    // on a pathological input. Fall back to the current time, which
+    // formats safely and surfaces a clearly-wrong value to the user.
+    let Some(target) = base.checked_add(TimeDuration::seconds(secs)) else {
+        return current_iso();
+    };
+    target.format(&Rfc3339).unwrap_or_else(|_| current_iso())
+}
+
+fn generated_password_from_value(resp: &SetPasswordResponse) -> Option<&str> {
+    // The mock decorates its `SetPasswordResponse` JSON with a
+    // `generatedPassword` field. We did not model it on the struct
+    // because the live server doesn't return it; fall back to None.
+    let _ = resp;
+    None
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::duration_suboptimal_units
+)]
+mod tests {
+    use super::*;
+    use std::time::Duration as StdDuration;
+
+    #[test]
+    fn expires_to_iso_never_yields_none() {
+        assert!(expires_to_iso(&Expires::Never).is_none());
+    }
+
+    #[test]
+    fn expires_to_iso_duration_yields_iso() {
+        let iso = expires_to_iso(&Expires::Duration(StdDuration::from_secs(86_400))).unwrap();
+        // Has a date-time prefix and a timezone designator.
+        assert!(iso.contains('T'));
+        assert!(iso.ends_with('Z') || iso.contains('+') || iso.contains('-'));
+    }
+
+    #[test]
+    fn expires_to_iso_absolute_timestamp_round_trips() {
+        let dt = OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap();
+        let iso = expires_to_iso(&Expires::AbsoluteUtc(dt)).unwrap();
+        let parsed =
+            crate::commands::list::parse_iso_seconds(&iso).expect("parse round-tripped iso");
+        assert_eq!(parsed, 1_750_000_000);
+    }
+}

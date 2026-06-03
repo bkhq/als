@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>als preview single-html fixture</title>
+    <style>
+      body { font: 16px/1.6 -apple-system, "Inter", system-ui, sans-serif;
+             margin: 3rem auto; max-width: 38rem; padding: 0 1.2rem;
+             color: #1a1a1a; }
+      @media (prefers-color-scheme: dark) { body { color: #eaeaea; background: #181a1f; } }
+      code { background: #00000014; padding: .12em .4em; border-radius: 4px; }
+      .tag { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase;
+             padding: .15rem .55rem; border-radius: 999px;
+             background: #b8730d26; color: #b8730d; }
+    </style>
+  </head>
+  <body>
+    <span class="tag">single-html mode</span>
+    <h1 id="probe-single-html">als preview &mdash; standalone <code>.html</code> file</h1>
+    <p>
+      A bare <code>*.html</code> file passed to <code>als preview</code> is
+      copied into a scratch tempdir as <code>index.html</code> and served
+      from the tempdir root, so the banner-printed URL <code>/</code>
+      resolves to this page directly.
+    </p>
+  </body>
+</html>

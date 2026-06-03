@@ -1,0 +1,18 @@
+[net]
+git-fetch-with-cli = true
+
+# reqwest's HTTP/3 (QUIC) APIs sit behind an `unstable` gate. The CLI prefers
+# HTTP/3 with HTTP/2 fallback (see `crates/als-api/src/client.rs`), so every
+# build in this workspace needs the cfg set. NB: cargo's rustflag precedence
+# means an externally-set `RUSTFLAGS=` env var *overrides* this entry — CI
+# jobs that set `RUSTFLAGS` must include `--cfg=reqwest_unstable` themselves.
+[build]
+rustflags = ["--cfg=reqwest_unstable"]
+
+[alias]
+ci-fmt = "fmt --all -- --check"
+ci-clippy = "clippy --workspace --all-targets --all-features --locked"
+ci-test = "nextest run --workspace --all-features --locked"
+ci-doctest = "test --doc --workspace --all-features --locked"
+ci-doc = "doc --workspace --no-deps --document-private-items --locked"
+ci-deny = "deny --all-features check"

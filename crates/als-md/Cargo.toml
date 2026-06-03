@@ -1,0 +1,24 @@
+[package]
+name = "als-md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "als CLI Markdown + mdbook pre-render: directory -> HTML temp dir for als-pack"
+
+[lib]
+name = "als_md"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+als-core = { path = "../als-core" }
+als-pack = { path = "../als-pack" }
+mdbook.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

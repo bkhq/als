@@ -1,0 +1,11 @@
+pub(crate) mod auth;
+pub(crate) mod completion;
+pub(crate) mod config;
+pub(crate) mod deploy;
+pub(crate) mod list;
+pub(crate) mod preview;
+pub(crate) mod qr;
+pub(crate) mod rm;
+pub(crate) mod site;
+pub(crate) mod site_ident;
+pub(crate) mod unpin;

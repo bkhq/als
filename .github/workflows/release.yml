@@ -1,0 +1,211 @@
+name: Release
+
+# Builds per-platform `als` binaries and publishes them as GitHub Release
+# assets. Triggered by pushing a tag like `v0.1.0` or manually via
+# workflow_dispatch.
+#
+# Packaging:
+#   Unix:    als-<subpkg>.tar.gz   (contains ./als)
+#   Windows: als-<subpkg>.zip      (contains als.exe)
+#
+# Distribution targets match docs/cli-spec.md:
+#   - als-linux-x64       x86_64-unknown-linux-musl
+#   - als-linux-arm64     aarch64-unknown-linux-musl
+#   - als-darwin-x64      x86_64-apple-darwin
+#   - als-darwin-arm64    aarch64-apple-darwin
+#   - als-windows-x64     x86_64-pc-windows-msvc
+#
+# Profile: `dist` (opt-level = "z", strip = "symbols", panic = "abort"),
+# defined in the workspace Cargo.toml. Output lives under
+# target/<triple>/dist/als.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to create (e.g. v0.1.0)"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Default to read-only across every job. The `release` job below
+# explicitly upgrades to `contents: write` so it can publish the
+# GitHub Release; every other job (per-platform builds) stays
+# read-only.
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: build linux (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            subpkg: linux-x64
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            subpkg: linux-arm64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build dist
+        run: cargo build --profile dist --bin als --target ${{ matrix.target }} --locked
+
+      - name: Package tarball
+        run: |
+          set -eu
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/dist/als" "als"
+          chmod +x "als"
+          tar -czf "dist/als-${{ matrix.subpkg }}.tar.gz" "als"
+          rm "als"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: asset-${{ matrix.subpkg }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  build-macos:
+    name: build macos (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-26-intel
+            subpkg: darwin-x64
+          - target: aarch64-apple-darwin
+            os: macos-26
+            subpkg: darwin-arm64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build dist
+        run: cargo build --profile dist --bin als --target ${{ matrix.target }} --locked
+
+      - name: Package tarball
+        run: |
+          set -eu
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/dist/als" "als"
+          chmod +x "als"
+          tar -czf "dist/als-${{ matrix.subpkg }}.tar.gz" "als"
+          rm "als"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: asset-${{ matrix.subpkg }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  build-windows:
+    name: build windows (${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            subpkg: windows-x64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build dist
+        run: cargo build --profile dist --bin als --target ${{ matrix.target }} --locked
+
+      - name: Package zip
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/dist/als.exe" "als.exe"
+          7z a "dist/als-${{ matrix.subpkg }}.zip" "als.exe"
+          rm "als.exe"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: asset-${{ matrix.subpkg }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish github release
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "name=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all platform assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: asset-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -la artifacts/
+
+      - name: Create tag (if dispatched)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag "${{ steps.tag.outputs.name }}"
+          git push origin "${{ steps.tag.outputs.name }}"
+
+      - name: Create GitHub Release with assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.tag.outputs.name }}" \
+            --title "${{ steps.tag.outputs.name }}" \
+            --generate-notes \
+            artifacts/*.tar.gz artifacts/*.zip

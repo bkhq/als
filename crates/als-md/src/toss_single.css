@@ -1,0 +1,40 @@
+/* toss-single: overlay applied only on the `bootstrap_from_file` path.
+ *
+ * A single-`*.md` preview produces a one-chapter mdbook. The default
+ * theme still renders the sidebar (with that single entry) and the
+ * prev/next strip at the bottom of the page (both anchors absent).
+ * Both are visual noise here — collapse the chrome and center the
+ * content column on the viewport. The menu bar (theme toggle, search,
+ * print) stays useful and is left alone. */
+
+#sidebar,
+.sidebar-iframe-inner,
+.mobile-nav-chapters,
+.nav-wide-wrapper,
+.nav-wrapper {
+  display: none !important;
+}
+
+/* The toggle button collapses/expands the sidebar; pointless when the
+ * sidebar itself is gone. */
+.menu-bar #sidebar-toggle {
+  display: none !important;
+}
+
+/* The page wrapper reserves space on the left for the sidebar via a
+ * left margin; reclaim it. */
+.page-wrapper {
+  margin-left: 0 !important;
+}
+
+/* Recenter the now-uncrowded content column. */
+.content {
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+/* The menu bar shows the book title in a large heading; that's
+ * redundant with the page's own `# H1` directly below. Drop it. */
+.menu-title {
+  display: none;
+}

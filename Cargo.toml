@@ -1,0 +1,111 @@
+[workspace]
+resolver = "2"
+members = ["crates/als", "crates/als-core", "crates/als-api", "crates/als-pack", "crates/als-md", "crates/als-preview", "crates/als-code"]
+default-members = ["crates/als"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "process", "signal", "io-util", "time", "sync"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls", "form", "http3"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+# Pure-Rust deflate only; default features pull in bzip2-sys / xz2-sys / zstd-sys (Lock 1 violation).
+zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+walkdir = "2"
+ignore = "0.4"
+indicatif = "0.18"
+dialoguer = { version = "0.12", default-features = false }
+anstream = "1"
+thiserror = "2"
+secrecy = "0.10"
+etcetera = "0.10"
+url = "2"
+clap_complete = "4"
+# Terminal QR rendering for `als auth login` (device flow). Default features
+# pull in `image`/`svg`; we render to unicode half-blocks ourselves so disable.
+qrcode = { version = "0.14", default-features = false }
+# Cross-platform hostname lookup for the device-flow `hostname_hint`.
+hostname = "0.4"
+time = { version = "0.3", default-features = false, features = ["parsing", "formatting", "macros"] }
+assert_cmd = "2"
+predicates = "3"
+serial_test = "3"
+once_cell = "1"
+tempfile = "3"
+rand = "0.8"
+# Content-fingerprint hashing for `als <path>` no-op skip. Pure-Rust.
+sha2 = "0.10"
+# Single Markdown renderer: mdbook (pure Rust). `als-md` always builds an
+# mdbook (auto-bootstrapping `book.toml` + `SUMMARY.md` when the input does
+# not already have them), so we never need to take pulldown-cmark as a
+# direct dep.
+mdbook = { version = "0.4", default-features = false }
+# Pure-Rust static HTTP server backing `als-preview`. Single-threaded
+# request loop plus tiny_http's own listener thread is sufficient for the
+# local-preview use case (one browser tab loading a handful of assets).
+tiny_http = { version = "0.12", default-features = false }
+
+# Layered priority: -2 = outer umbrella, -1 = group, 0 = specific lint wins.
+[workspace.lints.rust]
+warnings = { level = "deny", priority = -2 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+unsafe_code = "forbid"
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+unreachable_pub = "warn"
+elided_lifetimes_in_paths = "warn"
+
+[workspace.lints.clippy]
+correctness = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+todo = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# Keep symbols + unwind so production backtraces resolve; `[profile.dist]` is
+# the shrinkwrapped one for cargo-dist artefacts.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"
+strip = "none"
+panic = "unwind"
+incremental = false
+
+[profile.dist]
+inherits = "release"
+opt-level = "z"
+strip = "symbols"
+panic = "abort"
+debug = false
+
+[profile.dev]
+opt-level = 0
+debug = "line-tables-only"
+incremental = true
+split-debuginfo = "unpacked"
+
+# Optimise deps in dev — speeds up test runs.
+[profile.dev.package."*"]
+opt-level = 1

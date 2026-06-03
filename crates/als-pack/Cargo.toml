@@ -1,0 +1,31 @@
+[package]
+name = "als-pack"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "als CLI packaging: ignore, walk, zip"
+
+[lib]
+name = "als_pack"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+als-core = { path = "../als-core" }
+walkdir.workspace = true
+ignore.workspace = true
+zip.workspace = true
+sha2.workspace = true
+serde.workspace = true
+toml.workspace = true
+# Comment-preserving TOML round-trip for `AlsConfig::write_id`. The auto-
+# write after a successful deploy touches one key; toml_edit lets us keep
+# the user's other fields and comments verbatim.
+toml_edit = "0.22"
+
+[dev-dependencies]
+tempfile.workspace = true

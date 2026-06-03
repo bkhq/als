@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>als preview html-dir fixture</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1a1a1a;
+        --bg: #fafafa;
+        --accent: #2f6feb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --fg: #eaeaea; --bg: #181a1f; --accent: #6ea8fe; }
+      }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        display: grid;
+        place-items: center;
+        line-height: 1.6;
+      }
+      main { max-width: 38rem; padding: 2.5rem 1.5rem; }
+      h1 { font-size: 2.2rem; margin: 0 0 .6rem; }
+      .badge {
+        display: inline-block;
+        font-size: .78rem;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        background: color-mix(in srgb, var(--accent) 16%, transparent);
+        color: var(--accent);
+        padding: .15rem .55rem;
+        border-radius: 999px;
+        margin-bottom: 1rem;
+      }
+      code {
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        padding: .12em .4em;
+        border-radius: 4px;
+        font-size: .92em;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="badge">html-dir mode</span>
+      <h1 id="probe-html-dir">als preview &mdash; <code>html-dir</code> fixture</h1>
+      <p>
+        Folder containing <code>index.html</code>. <code>als preview</code>
+        serves it as a plain static site &mdash; no markdown rendering,
+        no mdbook bootstrap. Raw files are returned as-is, with the MIME
+        table the rest of the preview surface uses.
+      </p>
+    </main>
+  </body>
+</html>

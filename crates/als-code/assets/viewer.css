@@ -1,0 +1,353 @@
+/* toss-code-viewer — read-only code viewer shell. */
+
+:root {
+  color-scheme: light dark;
+  --toss-bg: #ffffff;
+  --toss-fg: #1f2328;
+  --toss-muted: #59636e;
+  --toss-border: #d0d7de;
+  --toss-aside-bg: #f6f8fa;
+  --toss-aside-hover: #eaeef2;
+  --toss-aside-active: #ddf4ff;
+  --toss-tab-bg: #f6f8fa;
+  --toss-tab-active-bg: #ffffff;
+  --toss-accent: #0969da;
+  --toss-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  font-size: 13px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --toss-bg: #0d1117;
+    --toss-fg: #e6edf3;
+    --toss-muted: #8d96a0;
+    --toss-border: #30363d;
+    --toss-aside-bg: #161b22;
+    --toss-aside-hover: #1f242c;
+    --toss-aside-active: #1f6feb33;
+    --toss-tab-bg: #0d1117;
+    --toss-tab-active-bg: #161b22;
+    --toss-accent: #58a6ff;
+    --toss-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--toss-bg);
+  color: var(--toss-fg);
+}
+
+#toss-root {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  min-height: 0;
+}
+
+.toss-aside {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  border-right: 1px solid var(--toss-border);
+  background: var(--toss-aside-bg);
+  overflow: auto;
+  padding: 0.5rem 0;
+  min-height: 0;
+}
+
+.toss-aside-title {
+  font-weight: 600;
+  padding: 0.25rem 0.75rem 0.5rem;
+  color: var(--toss-fg);
+  word-break: break-word;
+}
+
+.toss-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toss-tree li {
+  padding: 0;
+  margin: 0;
+}
+
+.toss-tree-dir > .toss-tree-label {
+  font-weight: 600;
+  color: var(--toss-muted);
+  padding: 0.2rem 0.75rem;
+  user-select: none;
+}
+
+.toss-tree-dir > ul {
+  list-style: none;
+  padding-left: 0.75rem;
+  margin: 0;
+  border-left: 1px solid var(--toss-border);
+  margin-left: 0.75rem;
+}
+
+.toss-tree-file {
+  display: block;
+  padding: 0.2rem 0.75rem;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toss-tree-file:hover {
+  background: var(--toss-aside-hover);
+}
+
+.toss-tree-file[aria-current="true"] {
+  background: var(--toss-aside-active);
+  color: var(--toss-accent);
+}
+
+.toss-main {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toss-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--toss-border);
+  background: var(--toss-tab-bg);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.toss-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border-right: 1px solid var(--toss-border);
+  color: var(--toss-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.toss-tab[aria-current="true"] {
+  background: var(--toss-tab-active-bg);
+  color: var(--toss-fg);
+  box-shadow: var(--toss-shadow);
+}
+
+.toss-tab-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.toss-tab-close:hover {
+  color: var(--toss-accent);
+}
+
+.toss-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Floating "Source / Rendered" toggle, only visible for md / html files. */
+.toss-view-toggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 1rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  font: 500 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+    Arial, sans-serif;
+  color: var(--toss-muted);
+  background: var(--toss-tab-bg);
+  border: 1px solid var(--toss-border);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.toss-view-toggle:hover {
+  color: var(--toss-fg);
+  border-color: var(--toss-accent);
+}
+
+.toss-view-toggle[aria-pressed="true"] {
+  color: var(--toss-accent);
+  border-color: var(--toss-accent);
+}
+
+.toss-pane {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.toss-pane-code {
+  overflow: hidden;
+}
+
+.toss-html-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--toss-bg);
+}
+
+/* Markdown rendering — narrow column, prose typography. */
+.toss-markdown {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 3rem;
+  font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  color: var(--toss-fg);
+}
+
+.toss-markdown h1,
+.toss-markdown h2,
+.toss-markdown h3,
+.toss-markdown h4 {
+  margin: 1.4em 0 0.4em;
+  line-height: 1.25;
+}
+
+.toss-markdown h1 {
+  font-size: 1.7em;
+  border-bottom: 1px solid var(--toss-border);
+  padding-bottom: 0.3em;
+}
+
+.toss-markdown h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--toss-border);
+  padding-bottom: 0.25em;
+}
+
+.toss-markdown h3 {
+  font-size: 1.15em;
+}
+
+.toss-markdown p,
+.toss-markdown ul,
+.toss-markdown ol,
+.toss-markdown blockquote {
+  margin: 0.75em 0;
+}
+
+.toss-markdown ul,
+.toss-markdown ol {
+  padding-left: 1.6em;
+}
+
+.toss-markdown a {
+  color: var(--toss-accent);
+  text-decoration: none;
+}
+
+.toss-markdown a:hover {
+  text-decoration: underline;
+}
+
+.toss-markdown code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  font-size: 0.88em;
+  background: var(--toss-aside-bg);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+.toss-markdown pre {
+  background: var(--toss-aside-bg);
+  padding: 0.85em 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.toss-markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.toss-markdown blockquote {
+  border-left: 3px solid var(--toss-border);
+  padding-left: 1em;
+  color: var(--toss-muted);
+}
+
+.toss-markdown table {
+  border-collapse: collapse;
+  margin: 0.75em 0;
+}
+
+.toss-markdown th,
+.toss-markdown td {
+  border: 1px solid var(--toss-border);
+  padding: 0.4em 0.7em;
+}
+
+.toss-markdown th {
+  background: var(--toss-aside-bg);
+  font-weight: 600;
+}
+
+.toss-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--toss-border);
+  margin: 1.5em 0;
+}
+
+.toss-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.toss-editor .cm-editor {
+  height: 100%;
+}
+
+.toss-editor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.toss-status {
+  font-size: 12px;
+  color: var(--toss-muted);
+  padding: 0.3rem 0.75rem;
+  border-top: 1px solid var(--toss-border);
+  background: var(--toss-tab-bg);
+  flex-shrink: 0;
+}
+
+.toss-empty {
+  padding: 2rem;
+  color: var(--toss-muted);
+}

@@ -1,0 +1,33 @@
+# Rust
+/target
+**/*.rs.bk
+**/*.profraw
+*.pdb
+Cargo.lock.bak
+
+# JavaScript / Bun (tests/mock-server)
+node_modules/
+bun-debug.log*
+.bun-cache/
+
+# Local config / secrets
+.env
+.env.local
+.envrc
+.cargo/config.local.toml
+
+# PMA scratch space (per skill convention)
+/tmp/
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+# Claude Code session metadata (per-developer; not source of truth)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

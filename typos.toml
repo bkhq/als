@@ -1,0 +1,19 @@
+[files]
+extend-exclude = [
+    "target/",
+    "Cargo.lock",
+    # Minified CodeMirror bundle — random short tokens trip the spell-checker.
+    "crates/als-code/assets/viewer.js",
+]
+
+[default]
+extend-ignore-re = [
+    # Allow obvious URL-like hashes in code/docs (e.g. k7x2qm4j6p.a.ls).
+    "[a-z0-9]{5,}\\.a\\.ls",
+]
+
+[default.extend-words]
+# Project / binary name; not a misspelling of "also".
+als = "als"
+# `flate2` crate / `deflate-flate2` zip feature name.
+flate = "flate"
