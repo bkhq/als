@@ -1,8 +1,14 @@
 name: Release
 
-# Builds per-platform `als` binaries and publishes them as GitHub Release
-# assets. Triggered by pushing a tag like `v0.1.0` or manually via
-# workflow_dispatch.
+# Builds per-platform `als` binaries and uploads them as assets to an
+# existing GitHub Release. The release (and its tag) is created from the
+# client, e.g.:
+#
+#   gh release create v0.1.0 --target main --generate-notes
+#
+# That publishes the release on the remote (tagging main's HEAD, so no
+# local tag is required) and fires the `release: published` event below,
+# which runs the per-platform builds and attaches the binaries.
 #
 # Packaging:
 #   Unix:    als-<subpkg>.tar.gz   (contains ./als)
@@ -20,14 +26,8 @@ name: Release
 # target/<triple>/dist/als.
 
 on:
-  push:
-    tags:
-      - "v*"
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version tag to create (e.g. v0.1.0)"
-        required: true
+  release:
+    types: [published]
 
 env:
   CARGO_TERM_COLOR: always
@@ -40,8 +40,23 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    name: validate tag
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Check version format
+        run: |
+          set -eu
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Release tag '$TAG' must match vMAJOR.MINOR.PATCH (e.g. v0.1.0)"
+            exit 1
+          fi
+
   build-linux:
     name: build linux (${{ matrix.target }})
+    needs: validate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -87,6 +102,7 @@ jobs:
 
   build-macos:
     name: build macos (${{ matrix.target }})
+    needs: validate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -129,6 +145,7 @@ jobs:
 
   build-windows:
     name: build windows (${{ matrix.target }})
+    needs: validate
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -166,23 +183,12 @@ jobs:
           retention-days: 7
 
   release:
-    name: publish github release
+    name: upload release assets
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Resolve tag name
-        id: tag
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "name=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Download all platform assets
         uses: actions/download-artifact@v8
         with:
@@ -190,27 +196,19 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: List assets
-        run: ls -la artifacts/
+      - name: Generate checksums
+        run: |
+          set -eu
+          cd artifacts
+          sha256sum *.tar.gz *.zip > checksums.txt
+          cat checksums.txt
 
-      - name: Create tag (if dispatched)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload assets to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          git tag "${{ steps.tag.outputs.name }}"
-          git push origin "${{ steps.tag.outputs.name }}"
-
-      - name: Publish GitHub Release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${{ steps.tag.outputs.name }}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" --clobber artifacts/*.tar.gz artifacts/*.zip
-          else
-            gh release create "$tag" \
-              --title "$tag" \
-              --generate-notes \
-              artifacts/*.tar.gz artifacts/*.zip
-          fi
+          gh release upload "$TAG" \
+            artifacts/*.tar.gz artifacts/*.zip artifacts/checksums.txt \
+            --clobber
