@@ -60,7 +60,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - run: cargo nextest run --workspace --all-features --locked --profile ci
+      # Unit tests only — the integration tests spawn the Bun mock server and
+      # are covered by the `e2e` job, which installs Bun. Running them here
+      # (no Bun) would panic in MockServer::spawn.
+      - run: cargo nextest run --workspace --all-features --locked --profile ci --lib --bins
       - run: cargo test --doc --workspace --all-features --locked
 
   e2e:
@@ -119,9 +122,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: rustsec/audit-check@v2
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+      - run: cargo audit
 
   shear:
     name: cargo-shear
